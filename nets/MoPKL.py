@@ -8,6 +8,7 @@ from einops import rearrange
 import matplotlib.pyplot as plt
 import cv2
 import cupy as cp
+from .motion_alignment_map import generate_motion_alignment_map_batch
 
 class MotionModel(nn.Module):
     # 初始化，超参数分别控制输入维度、潜在空间大小和隐藏层
@@ -164,6 +165,139 @@ class GATNet(nn.Module):
 
  
 
+class PairGate(nn.Module):
+    def __init__(self, c_rgb, c_mot, hidden=64):
+        super().__init__()
+        self.fc_rgb = nn.Linear(c_rgb, hidden)
+        self.fc_mot = nn.Linear(c_mot, hidden)
+        self.fc_out = nn.Linear(2 * hidden, 2)
+        self.act = nn.ReLU()
+
+    def forward(self, F_rgb, F_mot):
+        B, Cr, H, W = F_rgb.shape
+        _, Cm, _, _ = F_mot.shape
+        
+        # 全局平均池化得到通道级特征
+        v_rgb = F_rgb.mean(dim=[2, 3])  # [B, Cr]
+        v_mot = F_mot.mean(dim=[2, 3])  # [B, Cm]
+        
+        # 特征映射
+        v_rgb = self.act(self.fc_rgb(v_rgb))  # [B, hidden]
+        v_mot = self.act(self.fc_mot(v_mot))  # [B, hidden]
+        
+        # 拼接并计算权重
+        z = torch.cat([v_rgb, v_mot], dim=1)  # [B, 2*hidden]
+        scores = self.fc_out(z)  # [B, 2]
+        alpha = torch.softmax(scores, dim=1)  # [B, 2]
+        
+        # 扩展维度用于广播
+        w_rgb = alpha[:, 0].view(B, 1, 1, 1)
+        w_mot = alpha[:, 1].view(B, 1, 1, 1)
+        
+        return w_rgb, w_mot
+
+
+class Feature_Alignment(nn.Module):
+    def __init__(self, depth=0.33, width=0.50, in_features=("dark3", "dark4", "dark5"), 
+                 in_channels=[128, 256, 512], depthwise=False, act="silu"):
+        super().__init__()
+        from .light_backbone import LightBackbone
+        
+        Conv = DWConv if depthwise else BaseConv
+        self.in_features = in_features
+        
+        # RGB特征提取：CSPDarknet
+        self.rgb_backbone = CSPDarknet(depth, width, depthwise=depthwise, act=act)
+        
+        # 运动特征提取：LightBackbone
+        self.motion_backbone = LightBackbone(
+            out_features=in_features,
+            depth=depth,
+            width=width,
+            depthwise=True,  # 运动特征使用深度可分离卷积
+            act=act
+        )
+        
+        # 获取RGB和运动特征的通道数
+        base_channels = int(width * 64)
+        rgb_channels = [
+            base_channels * 4,   # dark3: 128
+            base_channels * 8,   # dark4: 256
+            base_channels * 16,  # dark5: 512
+        ]
+        mot_channels = [32, 64, 128]
+        
+        # 为每个尺度创建PairGate
+        self.pair_gates = nn.ModuleDict({
+            "dark3": PairGate(rgb_channels[0], mot_channels[0], hidden=64),
+            "dark4": PairGate(rgb_channels[1], mot_channels[1], hidden=64),
+            "dark5": PairGate(rgb_channels[2], mot_channels[2], hidden=64),
+        })
+        
+        # 通道对齐：将融合后的特征对齐到RGB通道数
+        self.align_convs = nn.ModuleDict({
+            "dark3": BaseConv(rgb_channels[0] + mot_channels[0], int(in_channels[0] * width), 1, 1, act=act),
+            "dark4": BaseConv(rgb_channels[1] + mot_channels[1], int(in_channels[1] * width), 1, 1, act=act),
+            "dark5": BaseConv(rgb_channels[2] + mot_channels[2], int(in_channels[2] * width), 1, 1, act=act),
+        })
+        
+        # 逐尺度融合（类似Feature_Extractor）
+        self.upsample = nn.Upsample(scale_factor=2, mode="nearest")
+        self.lateral_conv0 = BaseConv(int(in_channels[2] * width), int(in_channels[1] * width), 1, 1, act=act)
+        self.C3_p4 = CSPLayer(
+            int(2 * in_channels[1] * width),
+            int(in_channels[1] * width),
+            round(3 * depth),
+            False,
+            depthwise=depthwise,
+            act=act,
+        )
+        self.reduce_conv1 = BaseConv(int(in_channels[1] * width), int(in_channels[0] * width), 1, 1, act=act)
+        self.C3_p3 = CSPLayer(
+            int(2 * in_channels[0] * width),
+            int(in_channels[0] * width),
+            round(3 * depth),
+            False,
+            depthwise=depthwise,
+            act=act,
+        )
+
+    def forward(self, rgb_input, motion_input):
+        rgb_features = self.rgb_backbone.forward(rgb_input)
+        motion_features = self.motion_backbone.forward(motion_input)
+        
+        aligned_features = {}
+        for feat_name in self.in_features:
+            F_rgb = rgb_features[feat_name]
+            F_mot = motion_features[feat_name]
+            
+            # 使用PairGate计算权重
+            w_rgb, w_mot = self.pair_gates[feat_name](F_rgb, F_mot)
+            F_rgb_weighted = w_rgb * F_rgb
+            F_mot_weighted = w_mot * F_mot
+            
+            # 权重拼接：拼接加权后的RGB和运动特征
+            F_concat = torch.cat([F_rgb_weighted, F_mot_weighted], dim=1)
+            
+            # 通道对齐
+            F_aligned = self.align_convs[feat_name](F_concat)
+            aligned_features[feat_name] = F_aligned
+        
+        # 4. 逐尺度融合（类似Feature_Extractor）
+        [feat1, feat2, feat3] = [aligned_features[f] for f in self.in_features]
+        
+        P5 = self.lateral_conv0(feat3)
+        P5_upsample = self.upsample(P5)
+        P5_upsample = torch.cat([P5_upsample, feat2], 1)
+        P5_upsample = self.C3_p4(P5_upsample)
+        P4 = self.reduce_conv1(P5_upsample)
+        P4_upsample = self.upsample(P4)
+        P4_upsample = torch.cat([P4_upsample, feat1], 1)
+        P3_out = self.C3_p3(P4_upsample)
+        
+        return P3_out
+
+
 class Feature_Extractor(nn.Module):
     def __init__(self, depth = 1.0, width = 1.0, in_features = ("dark3", "dark4", "dark5"), in_channels = [256, 512, 1024], depthwise = False, act = "silu"):
         super().__init__()
@@ -210,7 +344,7 @@ class MoPKL(nn.Module):
         super(MoPKL, self).__init__()
         
         self.num_frame = num_frame
-        self.backbone = Feature_Extractor(0.33,0.50)
+        self.backbone = Feature_Alignment(0.33, 0.50)
         self.fusion = Fusion_Module(channels=[128], num_frame=num_frame)
         self.head = YOLOXHead(num_classes=num_classes, width = 1.0, in_channels = [256], act = "silu")
         self.conv_vl = nn.Sequential(
@@ -254,11 +388,40 @@ class MoPKL(nn.Module):
         feat = []
         outputs = []
         
-        for i in range(self.num_frame-2,self.num_frame): # 从输入序列取最后两帧
-            f_feats = self.backbone(inputs[:,:,i,:,:]) # 提取特征，inputs参数分别为：Batch size, Channel, 第几帧, Height, Width
-            feat.append(f_feats) # 把特征存到列表feat
+        # 从inputs中提取最后两帧用于计算运动差分图
+        # inputs形状: (B, C, T, H, W)，其中T是帧数
+        frame1_batch = inputs[:, :, self.num_frame-2, :, :]  # 倒数第二帧 (B, C, H, W)
+        frame2_batch = inputs[:, :, self.num_frame-1, :, :]  # 最后一帧 (B, C, H, W)
+        
+        # 计算运动差分图
+        motion_diff_maps = generate_motion_alignment_map_batch(
+            frame1_batch=frame1_batch,
+            frame2_batch=frame2_batch,
+            motion_distance_threshold=None,
+            min_tracking_points=10,
+            ransac_threshold=1.0,
+            klt_epsilon=0.01,
+            klt_max_iter=10,
+            use_highpass=True,
+            highpass_d0=50,
+            highpass_n=2
+        )
+        
+        # 将运动差分图转换为tensor并归一化到[0, 1]
+        # motion_diff_maps形状: (B, H, W)，uint8格式，值范围[0, 255]
+        motion_diff_tensor = torch.from_numpy(motion_diff_maps).float() / 255.0  # (B, H, W)
+        if inputs.is_cuda:
+            motion_diff_tensor = motion_diff_tensor.cuda()
+        motion_diff_tensor = motion_diff_tensor.unsqueeze(1)  # (B, 1, H, W) - 添加通道维度
+        
+        # 使用Feature_Alignment进行特征对齐和融合
+        # 只处理最后一帧RGB图像和运动差分图
+        last_frame_rgb = inputs[:, :, self.num_frame-1, :, :]  # (B, 3, H, W) - 最后一帧
+        f_feats = self.backbone(last_frame_rgb, motion_diff_tensor)  # 特征对齐和融合
+        feat.append(f_feats)  # 保存融合后的特征
+        
         B, N, W, H = f_feats.shape
-        feats = self.conv_vl(torch.cat(feat,1)).squeeze(1) # 把相邻两帧在通道拼接后做卷积融合
+        feats = f_feats  # 直接使用融合后的特征，不再需要conv_vl融合
 
         if self.training: 
             # Language-Driven Motion Alignment
