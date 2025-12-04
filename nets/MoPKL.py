@@ -273,13 +273,14 @@ class MoPKL(nn.Module):
             # 输入参数分别代表：运动先验热力图（由实际框得到），最后两帧融合特征，最后一帧的语言描述
 
             # Motion-Relation Learning
-            v_feat = self.vf(feats) # 视觉特征转换
-            v_feat = rearrange(v_feat, 'b n w h -> b n (w h)', b=B, n=16, w=32, h=32) # 转换成节点表示，把每个空间位置当作一个图节点，每个节点n维特征
-            h = self.GAT(v_feat, relation.squeeze(1)) # 用节点特征和邻接矩阵建图
-            h_i = h.unsqueeze(2) 
-            h_j = h.unsqueeze(1)
-            pred_relation = torch.sum(h_i * h_j, dim=-1) # 通过内积计算两个节点间相似度
-            loss_relation = F.mse_loss(pred_relation, relation.squeeze(1))
+            # v_feat = self.vf(feats) # 视觉特征转换
+            # v_feat = rearrange(v_feat, 'b n w h -> b n (w h)', b=B, n=16, w=32, h=32) # 转换成节点表示，把每个空间位置当作一个图节点，每个节点n维特征
+            # h = self.GAT(v_feat, relation.squeeze(1)) # 用节点特征和邻接矩阵建图
+            # h_i = h.unsqueeze(2) 
+            # h_j = h.unsqueeze(1)
+            # pred_relation = torch.sum(h_i * h_j, dim=-1) # 通过内积计算两个节点间相似度
+            # loss_relation = F.mse_loss(pred_relation, relation.squeeze(1))
+            loss_relation = torch.tensor(0.0).cuda()  # 忽略 loss_relation
         else:
             motion = self.motion.inference_forward(feats)
 
@@ -288,7 +289,7 @@ class MoPKL(nn.Module):
         outputs  = self.head(feat) 
         
         if self.training:
-            return outputs, loss_alignment + loss_relation
+            return outputs, loss_alignment  # 忽略 loss_relation
         else:
             return outputs
 
