@@ -325,17 +325,6 @@ def generate_motion_alignment_map_batch(frame1_batch, frame2_batch,
                                         use_highpass=True,
                                         highpass_d0=30,
                                         highpass_n=2):
-    """
-    批量生成Motion Difference Map（支持tensor输入）
-    
-    Args:
-        frame1_batch: 前一帧图像批次，numpy数组 (B, H, W) 或 (B, H, W, 3)，或torch.Tensor (B, C, H, W)
-        frame2_batch: 当前帧图像批次，numpy数组 (B, H, W) 或 (B, H, W, 3)，或torch.Tensor (B, C, H, W)
-        其他参数同 generate_motion_alignment_map
-    
-    Returns:
-        motion_diff_maps: Motion Difference Map批次，numpy数组 (B, H, W)，uint8格式
-    """
     import torch
     
     # 处理tensor输入

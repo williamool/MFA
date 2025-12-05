@@ -298,45 +298,45 @@ class Feature_Alignment(nn.Module):
         return P3_out
 
 
-class Feature_Extractor(nn.Module):
-    def __init__(self, depth = 1.0, width = 1.0, in_features = ("dark3", "dark4", "dark5"), in_channels = [256, 512, 1024], depthwise = False, act = "silu"):
-        super().__init__()
-        Conv                = DWConv if depthwise else BaseConv
-        self.backbone       = CSPDarknet(depth, width, depthwise = depthwise, act = act) # CSPDarknet主干，输出dark3/dark4/dark5分别表示：中分辨率/低分辨率/更低分辨率
-        self.in_features    = in_features
-        self.upsample       = nn.Upsample(scale_factor=2, mode="nearest") # 上采样最高层特征
-        self.lateral_conv0  = BaseConv(int(in_channels[2] * width), int(in_channels[1] * width), 1, 1, act=act) # 1*1卷积，通道1024压缩到512
-        self.C3_p4 = CSPLayer(
-            int(2 * in_channels[1] * width),
-            int(in_channels[1] * width),
-            round(3 * depth),
-            False,
-            depthwise = depthwise,
-            act = act,
-        ) # 把上采样后的高层特征（dark5）与dark4做CSP融合
-        self.reduce_conv1   = BaseConv(int(in_channels[1] * width), int(in_channels[0] * width), 1, 1, act=act)
-        self.C3_p3 = CSPLayer(
-            int(2 * in_channels[0] * width),
-            int(in_channels[0] * width),
-            round(3 * depth),
-            False,
-            depthwise = depthwise,
-            act = act,
-        ) # 把上采样后的dark45融合特征与dark3进一步融合
+# class Feature_Extractor(nn.Module):
+#     def __init__(self, depth = 1.0, width = 1.0, in_features = ("dark3", "dark4", "dark5"), in_channels = [256, 512, 1024], depthwise = False, act = "silu"):
+#         super().__init__()
+#         Conv                = DWConv if depthwise else BaseConv
+#         self.backbone       = CSPDarknet(depth, width, depthwise = depthwise, act = act) # CSPDarknet主干，输出dark3/dark4/dark5分别表示：中分辨率/低分辨率/更低分辨率
+#         self.in_features    = in_features
+#         self.upsample       = nn.Upsample(scale_factor=2, mode="nearest") # 上采样最高层特征
+#         self.lateral_conv0  = BaseConv(int(in_channels[2] * width), int(in_channels[1] * width), 1, 1, act=act) # 1*1卷积，通道1024压缩到512
+#         self.C3_p4 = CSPLayer(
+#             int(2 * in_channels[1] * width),
+#             int(in_channels[1] * width),
+#             round(3 * depth),
+#             False,
+#             depthwise = depthwise,
+#             act = act,
+#         ) # 把上采样后的高层特征（dark5）与dark4做CSP融合
+#         self.reduce_conv1   = BaseConv(int(in_channels[1] * width), int(in_channels[0] * width), 1, 1, act=act)
+#         self.C3_p3 = CSPLayer(
+#             int(2 * in_channels[0] * width),
+#             int(in_channels[0] * width),
+#             round(3 * depth),
+#             False,
+#             depthwise = depthwise,
+#             act = act,
+#         ) # 把上采样后的dark45融合特征与dark3进一步融合
 
-    def forward(self, input):
-        out_features            = self.backbone.forward(input)
-        [feat1, feat2, feat3]   = [out_features[f] for f in self.in_features]
-        P5          = self.lateral_conv0(feat3)
-        P5_upsample = self.upsample(P5)
-        P5_upsample = torch.cat([P5_upsample, feat2], 1)
-        P5_upsample = self.C3_p4(P5_upsample)
-        P4          = self.reduce_conv1(P5_upsample) 
-        P4_upsample = self.upsample(P4) 
-        P4_upsample = torch.cat([P4_upsample, feat1], 1) 
-        P3_out      = self.C3_p3(P4_upsample)  
+#     def forward(self, input):
+#         out_features            = self.backbone.forward(input)
+#         [feat1, feat2, feat3]   = [out_features[f] for f in self.in_features]
+#         P5          = self.lateral_conv0(feat3)
+#         P5_upsample = self.upsample(P5)
+#         P5_upsample = torch.cat([P5_upsample, feat2], 1)
+#         P5_upsample = self.C3_p4(P5_upsample)
+#         P4          = self.reduce_conv1(P5_upsample) 
+#         P4_upsample = self.upsample(P4) 
+#         P4_upsample = torch.cat([P4_upsample, feat1], 1) 
+#         P3_out      = self.C3_p3(P4_upsample)  
         
-        return P3_out
+#         return P3_out
 
 
 class MoPKL(nn.Module):
@@ -418,7 +418,6 @@ class MoPKL(nn.Module):
         # 只处理最后一帧RGB图像和运动差分图
         last_frame_rgb = inputs[:, :, self.num_frame-1, :, :]  # (B, 3, H, W) - 最后一帧
         f_feats = self.backbone(last_frame_rgb, motion_diff_tensor)  # 特征对齐和融合
-        feat.append(f_feats)  # 保存融合后的特征
         
         B, N, W, H = f_feats.shape
         feats = f_feats  # 直接使用融合后的特征，不再需要conv_vl融合
@@ -433,7 +432,7 @@ class MoPKL(nn.Module):
             motion_prior_cpu = [cp.asnumpy(h) if hasattr(h, 'ndim') else h for h in motion_prior]
             motion_prior = torch.tensor(np.stack(motion_prior_cpu)).cuda() # 转成torch sensor
             motion, loss_alignment = self.motion.train_forward(motion_prior, feats, descriptions[:,-1,:,:], alpha=1.0, beta=1.0) 
-            # 输入参数分别代表：运动先验热力图（由实际框得到），最后两帧融合特征，最后一帧的语言描述
+            # 输入参数分别代表：运动先验热力图（由实际框得到），对齐特征，最后一帧的语言描述
 
             # Motion-Relation Learning
             # v_feat = self.vf(feats) # 视觉特征转换
@@ -448,7 +447,7 @@ class MoPKL(nn.Module):
             motion = self.motion.inference_forward(feats)
 
         motion = self.conv_m(motion.unsqueeze(1)) # 将视觉运动热力图转换成张量
-        feat = self.fusion(motion, feat[-1]) # 
+        feat = self.fusion(motion, feats) # 融合运动热力图与加强视觉特征
         outputs  = self.head(feat) 
         
         if self.training:
