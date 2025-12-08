@@ -95,12 +95,12 @@ class seqDataset(Dataset):
                 self.anno_idx.append(np.array([np.array(list(map(int,box.split(',')))) for box in line[1:]]))
 
         ###############################
-        description = pickle.load(open('/home/chenshengjia/MoPKL/emb_train_DAUB.pkl', 'rb'))
+        description = pickle.load(open('/root/autodl-tmp/.autodl/DAUB/emb_train_DAUB.pkl', 'rb'))
         embeddings = np.array(list(description.values()))
         self.cap_idx =list(description.keys())
         self.motion_cap_idx = np.array(list(description.values()))
 
-        relation = pickle.load(open('/home/chenshengjia/MoPKL/motion_relation_DAUB.pkl', 'rb'))
+        relation = pickle.load(open('/root/autodl-tmp/.autodl/DAUB/motion_relation_DAUB.pkl', 'rb'))
         relations = np.array(list(relation.values()))
         self.re_idx = list(relation.keys())
         self.motion_re_idx = np.array(list(relation.values()))
@@ -141,7 +141,27 @@ class seqDataset(Dataset):
         file_name = self.img_idx[index]
         caption_frames = []
         relation = []
-        cap_index = self.cap_idx.index(file_name)
+        
+        # Try to match with cap_idx (which may have old or new path format)
+        try:
+            cap_index = self.cap_idx.index(file_name)
+        except ValueError:
+            # If exact match not found, try converting from old format
+            old_path = file_name.replace('/root/autodl-tmp/.autodl/', '/home/public/')
+            try:
+                cap_index = self.cap_idx.index(old_path)
+            except ValueError:
+                # Try to find by filename only
+                filename = file_name.split('/')[-1]
+                cap_index = None
+                for i, cap_path in enumerate(self.cap_idx):
+                    # Try both old and new path formats
+                    if cap_path.endswith(filename) or cap_path.replace('/home/public/', '/root/autodl-tmp/.autodl/').endswith(filename):
+                        cap_index = i
+                        break
+                
+                if cap_index is None:
+                    raise ValueError(f"File {file_name} not found in cap_idx")
         relation.append(self.motion_re_idx[cap_index])
         for id in range(0, self.num_frame):
             idx = max(cap_index - id, 0)

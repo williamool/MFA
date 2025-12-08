@@ -15,20 +15,20 @@ from utils.utils import cvtColor, get_classes, preprocess_input, resize_image
 from utils.utils_bbox import decode_outputs, non_max_suppression
 
 map_mode            = 0
-cocoGt_path         = 'D:/Github/ITSDT/annotations/instances_test2017.json'
-dataset_img_path    = 'D:/Github/ITSDT/'
-# cocoGt_path         = '/home/public/DAUB/test.json'
-# dataset_img_path    = '/home/public/DAUB/'
+# cocoGt_path         = 'D:/Github/ITSDT/annotations/instances_test2017.json'
+# dataset_img_path    = 'D:/Github/ITSDT/'
+cocoGt_path         = '/root/autodl-tmp/.autodl/DAUB/test.json'
+dataset_img_path    = '/root/autodl-tmp/.autodl/DAUB'
 # cocoGt_path         = '/home/public/IRDST-H/test.json'
 # dataset_img_path    = '/home/public/IRDST-H/'
 
-temp_save_path      = 'D:/Github/MoPKL/res'
+temp_save_path      = '/root/MFA/res'
 
 class MAP_vid(object):
     _defaults = {
         
-        "model_path"        : 'D:/Github/logs/loss_2025_09_22_18_28_51/best_epoch_weights.pth',
-        "classes_path"      : 'D:/Github/MoPKL/model_data/classes.txt',
+        "model_path"        : '/root/MFA/logs/loss_2025_12_08_16_57_10/best_epoch_weights.pth',
+        "classes_path"      : '/root/MFA/model_data/classes.txt',
         "input_shape"       : [512, 512],
         "phi"               : 's',
         "confidence"        : 0.5,
@@ -59,8 +59,16 @@ class MAP_vid(object):
         show_config(**self._defaults)
 
     def generate(self, onnx=False):
+        # 根据数据集确定text_input_dim
+        # DAUB和IRDST-H使用20*300，ITSDT使用130*300
+        # 从全局变量cocoGt_path判断数据集类型（在文件顶部定义）
+        global cocoGt_path
+        if 'DAUB' in cocoGt_path or 'IRDST-H' in cocoGt_path:
+            text_input_dim = 20 * 300  # DAUB或IRDST-H数据集
+        else:
+            text_input_dim = 130 * 300  # ITSDT数据集（默认）
         
-        self.net    = MoPKL(self.num_classes, num_frame=2) 
+        self.net    = MoPKL(self.num_classes, num_frame=2, text_input_dim=text_input_dim) 
         device      = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.net.load_state_dict(torch.load(self.model_path, map_location=device))
         self.net    = self.net.eval()
@@ -121,6 +129,25 @@ if __name__ == "__main__":
     if not os.path.exists(temp_save_path):
         os.makedirs(temp_save_path)
 
+    # 确保 COCO JSON 文件包含必需的 'info' 字段
+    # 如果缺少，先添加默认的 info 字段
+    temp_json_path = None
+    original_coco_path = cocoGt_path
+    with open(cocoGt_path, 'r', encoding='utf-8') as f:
+        coco_data = json.load(f)
+    
+    if 'info' not in coco_data:
+        coco_data['info'] = {
+            "description": "Dataset",
+            "version": "1.0",
+            "year": 2024
+        }
+        # 创建临时文件保存修改后的数据，避免修改原文件
+        temp_json_path = cocoGt_path + '.temp'
+        with open(temp_json_path, 'w', encoding='utf-8') as f:
+            json.dump(coco_data, f)
+        cocoGt_path = temp_json_path
+    
     cocoGt      = COCO(cocoGt_path)
     ids         = list(cocoGt.imgToAnns.keys())
     clsid2catid = cocoGt.getCatIds()
@@ -163,6 +190,10 @@ if __name__ == "__main__":
         
         print("Precision: %.4f, Recall: %.4f, F1: %.4f" %(np.mean(precision_50[:int(recall_50*100)]), recall_50, 2*recall_50*np.mean(precision_50[:int(recall_50*100)])/( recall_50+np.mean(precision_50[:int(recall_50*100)]))))
         print("Get map done.")
+    
+    # 清理临时文件
+    if 'temp_json_path' in locals() and temp_json_path and os.path.exists(temp_json_path):
+        os.remove(temp_json_path)
         
         import matplotlib.pyplot as plt
         plt.figure(1) 

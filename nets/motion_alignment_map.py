@@ -384,8 +384,8 @@ def generate_motion_alignment_map_batch(frame1_batch, frame2_batch,
 
 if __name__ == "__main__":
     # 测试代码
-    img1_path = r"D:\Github\ITSDT\images\21\51.bmp"  # 帧 t-1
-    img2_path = r"D:\Github\ITSDT\images\21\52.bmp"  # 帧 t
+    img1_path = r"D:\Github\DAUB\DAUB\DAUB\data12\20.bmp"  # 帧 t-1
+    img2_path = r"D:\Github\DAUB\DAUB\DAUB\data12\21.bmp"  # 帧 t
     
     try:
         motion_diff_map = generate_motion_alignment_map(

@@ -261,7 +261,7 @@ class Feature_Alignment(nn.Module):
             depthwise=depthwise,
             act=act,
         )
-        
+
         # 输出层：将P3_out从64维扩展到256维，以匹配MotionModel的输入要求
         # 原来Feature_Extractor输出128维，现在需要256维输入MotionModel
         self.output_conv = BaseConv(int(in_channels[0] * width), 256, 3, 1, act=act)
@@ -347,18 +347,20 @@ class Feature_Alignment(nn.Module):
 
 
 class MoPKL(nn.Module):
-    def __init__(self, num_classes, num_frame=5):
+    def __init__(self, num_classes, num_frame=5, text_input_dim=130*300):
         super(MoPKL, self).__init__()
         
         self.num_frame = num_frame
         self.backbone = Feature_Alignment(0.33, 0.50)
         # Fusion_Module的channels参数需要匹配backbone的输出通道数（现在是256）
         self.fusion = Fusion_Module(channels=[256], num_frame=num_frame)
+        # YOLOXHead的in_channels需要匹配Fusion_Module的输出通道数（512 = channels[0] * 2）
         self.head = YOLOXHead(num_classes=num_classes, width = 1.0, in_channels = [512], act = "silu")
         self.conv_vl = nn.Sequential(
             BaseConv(128*2,256,3,1),
             BaseConv(256,256,3,1),
             BaseConv(256,256,1,1))
+        # conv_m输出通道数需要匹配Fusion_Module的期望：channels[0] * 2 = 256 * 2 = 512
         self.conv_m = nn.Sequential(
             BaseConv(1,64,3,2),
             BaseConv(64,128,3,2),
@@ -375,7 +377,7 @@ class MoPKL(nn.Module):
         DAUB-R: 20*300
         IRDST-H: 20*300
         """
-        self.motion = MotionModel(text_input_dim=130*300, latent_dim=128, hidden_dim=1024)
+        self.motion = MotionModel(text_input_dim=text_input_dim, latent_dim=128, hidden_dim=1024)
 
         
         self.GAT = GATNet(

@@ -24,8 +24,8 @@ if __name__ == "__main__":
     distributed     = False
     sync_bn         = False
     fp16            = False
-    classes_path    = 'model_data/classes.txt'
-    model_path      = 'model_data/pre_trained.pth'
+    classes_path    = '/root/MFA/model_data/classes.txt'
+    model_path      = '/root/MFA/model_data/pre_trained_backbone.pth'
     input_shape     = [512, 512]
     phi             = 's'
     mosaic              = False
@@ -46,12 +46,12 @@ if __name__ == "__main__":
     weight_decay        = 5e-4
     lr_decay_type       = "cos"
     save_period         = 1
-    save_dir            = 'logs'
+    save_dir            = '/root/MFA/logs'
     eval_flag           = True
     eval_period         = 100
     num_workers         = 4
-    train_annotation_path = '/home/public/DAUB/train.txt'
-    val_annotation_path = '/home/public/DAUB/val.txt'
+    train_annotation_path = '/root/autodl-tmp/.autodl/DAUB/train.txt'
+    val_annotation_path = '/root/autodl-tmp/.autodl/DAUB/val.txt'
     
     
     ngpus_per_node  = torch.cuda.device_count()
@@ -78,7 +78,8 @@ if __name__ == "__main__":
         
     class_names, num_classes = get_classes(classes_path)
     
-    model = MoPKL(num_classes=1,  num_frame=2) 
+    # DAUB数据集使用20*300的文本输入维度
+    model = MoPKL(num_classes=1, num_frame=2, text_input_dim=20*300) 
     weights_init(model)
     if model_path != '':
         
