@@ -157,6 +157,8 @@ def motion_compensate(frame1, frame2,
         # 如果跟踪点太少，使用单位矩阵（几乎不变换）
         homography_matrix = np.array([[0.999, 0, 0], [0, 0.999, 0], [0, 0, 1]])
     else:
+        # 设置随机种子以确保RANSAC结果可重复
+        np.random.seed(42)
         # 使用RANSAC算法计算单应性矩阵
         homography_matrix, status = cv2.findHomography(good_new, good_old, cv2.RANSAC, ransac_threshold)
 
@@ -294,26 +296,26 @@ def generate_motion_alignment_map(frame1, frame2,
         klt_max_iter=klt_max_iter)
     
     # 计算Motion Difference Map
-    frame_diff = cv2.absdiff(frame2_gray, img_compensate)
+    frame_diff = cv2.absdiff(frame2_gray, img_compensate).astype(np.float32)
     
-    # 步骤2: 显著性计算（已注释）
+    # 步骤2: 显著性计算（已跳过，直接对frame_diff进行归一化）
     # saliency_map = compute_saliency(frame_diff)
-    # 
-    # # 归一化显著性图到0-255范围
-    # saliency_min, saliency_max = saliency_map.min(), saliency_map.max()
-    # if saliency_max > saliency_min:
-    #     saliency_map = ((saliency_map - saliency_min) / (saliency_max - saliency_min) * 255).astype(np.uint8)
-    # else:
-    #     saliency_map = np.clip(saliency_map, 0, 255).astype(np.uint8)
-    # 
-    # # 归一化到[0, 1]范围用于背景抑制
-    # saliency_normalized = saliency_map.astype(np.float32) / 255.0
+    
+    # 归一化frame_diff到[0, 1]范围（直接返回float格式，供神经网络使用）
+    frame_diff_min, frame_diff_max = frame_diff.min(), frame_diff.max()
+    if frame_diff_max > frame_diff_min:
+        frame_diff_normalized = (frame_diff - frame_diff_min) / (frame_diff_max - frame_diff_min)
+    else:
+        frame_diff_normalized = np.zeros_like(frame_diff)
+    
+    # 截断到 [0, 1]
+    frame_diff_normalized = np.clip(frame_diff_normalized, 0, 1).astype(np.float32)
     
     # 步骤3: 背景抑制（已注释）
-    # motion_alignment_map = background_suppression(saliency_normalized, threshold=suppression_threshold)
+    # motion_alignment_map = background_suppression(frame_diff_normalized, threshold=suppression_threshold)
     
-    # 直接返回Motion Difference Map
-    return frame_diff
+    # 返回Motion Alignment Map（float格式，值范围[0, 1]）
+    return frame_diff_normalized
 
 
 def generate_motion_alignment_map_batch(frame1_batch, frame2_batch,
@@ -384,8 +386,8 @@ def generate_motion_alignment_map_batch(frame1_batch, frame2_batch,
 
 if __name__ == "__main__":
     # 测试代码
-    img1_path = r"D:\Github\DAUB\DAUB\DAUB\data12\20.bmp"  # 帧 t-1
-    img2_path = r"D:\Github\DAUB\DAUB\DAUB\data12\21.bmp"  # 帧 t
+    img1_path = r"D:\Github\DAUB\data11\29.bmp"  # 帧 t-1
+    img2_path = r"D:\Github\DAUB\data11\30.bmp"  # 帧 t
     
     try:
         motion_diff_map = generate_motion_alignment_map(

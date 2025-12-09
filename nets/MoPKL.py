@@ -165,185 +165,185 @@ class GATNet(nn.Module):
 
  
 
-class PairGate(nn.Module):
-    def __init__(self, c_rgb, c_mot, hidden=64):
+# class PairGate(nn.Module):
+#     def __init__(self, c_rgb, c_mot, hidden=64):
         super().__init__()
-        self.fc_rgb = nn.Linear(c_rgb, hidden)
-        self.fc_mot = nn.Linear(c_mot, hidden)
-        self.fc_out = nn.Linear(2 * hidden, 2)
-        self.act = nn.ReLU()
+#         self.fc_rgb = nn.Linear(c_rgb, hidden)
+#         self.fc_mot = nn.Linear(c_mot, hidden)
+#         self.fc_out = nn.Linear(2 * hidden, 2)
+#         self.act = nn.ReLU()
+#
+#     def forward(self, F_rgb, F_mot):
+#         B, Cr, H, W = F_rgb.shape
+#         _, Cm, _, _ = F_mot.shape
+#         
+#         # 全局平均池化得到通道级特征
+#         v_rgb = F_rgb.mean(dim=[2, 3])  # [B, Cr]
+#         v_mot = F_mot.mean(dim=[2, 3])  # [B, Cm]
+#         
+#         # 特征映射
+#         v_rgb = self.act(self.fc_rgb(v_rgb))  # [B, hidden]
+#         v_mot = self.act(self.fc_mot(v_mot))  # [B, hidden]
+#         
+#         # 拼接并计算权重
+#         z = torch.cat([v_rgb, v_mot], dim=1)  # [B, 2*hidden]
+#         scores = self.fc_out(z)  # [B, 2]
+#         alpha = torch.softmax(scores, dim=1)  # [B, 2]
+#         
+#         # 扩展维度用于广播
+#         w_rgb = alpha[:, 0].view(B, 1, 1, 1)
+#         w_mot = alpha[:, 1].view(B, 1, 1, 1)
+#         
+#         return w_rgb, w_mot
+#
+#
+# class Feature_Alignment(nn.Module):
+    # def __init__(self, depth=0.33, width=0.50, in_features=("dark3", "dark4", "dark5"), 
+    #              in_channels=[128, 256, 512], depthwise=False, act="silu"):
+    #     super().__init__()
+    #     from .light_backbone import LightBackbone
+        
+    #     Conv = DWConv if depthwise else BaseConv
+    #     self.in_features = in_features
+        
+    #     # RGB特征提取：CSPDarknet
+    #     self.rgb_backbone = CSPDarknet(depth, width, depthwise=depthwise, act=act)
+        
+    #     # 运动特征提取：LightBackbone
+    #     self.motion_backbone = LightBackbone(
+    #         out_features=in_features,
+    #         depth=depth,
+    #         width=width,
+    #         depthwise=True,  # 运动特征使用深度可分离卷积
+    #         act=act
+    #     )
+        
+    #     # 获取RGB和运动特征的通道数
+    #     base_channels = int(width * 64)
+    #     rgb_channels = [
+    #         base_channels * 4,   # dark3: 128
+    #         base_channels * 8,   # dark4: 256
+    #         base_channels * 16,  # dark5: 512
+    #     ]
+    #     mot_channels = [32, 64, 128]
+        
+    #     # 为每个尺度创建PairGate
+    #     self.pair_gates = nn.ModuleDict({
+    #         "dark3": PairGate(rgb_channels[0], mot_channels[0], hidden=64),
+    #         "dark4": PairGate(rgb_channels[1], mot_channels[1], hidden=64),
+    #         "dark5": PairGate(rgb_channels[2], mot_channels[2], hidden=64),
+    #     })
+        
+    #     # 通道对齐：将融合后的特征对齐到RGB通道数
+    #     self.align_convs = nn.ModuleDict({
+    #         "dark3": BaseConv(rgb_channels[0] + mot_channels[0], int(in_channels[0] * width), 1, 1, act=act),
+    #         "dark4": BaseConv(rgb_channels[1] + mot_channels[1], int(in_channels[1] * width), 1, 1, act=act),
+    #         "dark5": BaseConv(rgb_channels[2] + mot_channels[2], int(in_channels[2] * width), 1, 1, act=act),
+    #     })
+        
+    #     # 逐尺度融合（类似Feature_Extractor）
+    #     self.upsample = nn.Upsample(scale_factor=2, mode="nearest")
+    #     self.lateral_conv0 = BaseConv(int(in_channels[2] * width), int(in_channels[1] * width), 1, 1, act=act)
+    #     self.C3_p4 = CSPLayer(
+    #         int(2 * in_channels[1] * width),
+    #         int(in_channels[1] * width),
+    #         round(3 * depth),
+    #         False,
+    #         depthwise=depthwise,
+    #         act=act,
+    #     )
+    #     self.reduce_conv1 = BaseConv(int(in_channels[1] * width), int(in_channels[0] * width), 1, 1, act=act)
+    #     self.C3_p3 = CSPLayer(
+    #         int(2 * in_channels[0] * width),
+    #         int(in_channels[0] * width),
+    #         round(3 * depth),
+    #         False,
+    #         depthwise=depthwise,
+    #         act=act,
+    #     )
 
-    def forward(self, F_rgb, F_mot):
-        B, Cr, H, W = F_rgb.shape
-        _, Cm, _, _ = F_mot.shape
+    #     # 输出层：将P3_out从64维扩展到256维，以匹配MotionModel的输入要求
+    #     # 原来Feature_Extractor输出128维，现在需要256维输入MotionModel
+    #     self.output_conv = BaseConv(int(in_channels[0] * width), 256, 3, 1, act=act)
+
+    # def forward(self, rgb_input, motion_input):
+    #     rgb_features = self.rgb_backbone.forward(rgb_input)
+    #     motion_features = self.motion_backbone.forward(motion_input)
         
-        # 全局平均池化得到通道级特征
-        v_rgb = F_rgb.mean(dim=[2, 3])  # [B, Cr]
-        v_mot = F_mot.mean(dim=[2, 3])  # [B, Cm]
+    #     aligned_features = {}
+    #     for feat_name in self.in_features:
+    #         F_rgb = rgb_features[feat_name]
+    #         F_mot = motion_features[feat_name]
+            
+    #         # 使用PairGate计算权重
+    #         w_rgb, w_mot = self.pair_gates[feat_name](F_rgb, F_mot)
+    #         F_rgb_weighted = w_rgb * F_rgb
+    #         F_mot_weighted = w_mot * F_mot
+            
+    #         # 权重拼接：拼接加权后的RGB和运动特征
+    #         F_concat = torch.cat([F_rgb_weighted, F_mot_weighted], dim=1)
+            
+    #         # 通道对齐
+    #         F_aligned = self.align_convs[feat_name](F_concat)
+    #         aligned_features[feat_name] = F_aligned
         
-        # 特征映射
-        v_rgb = self.act(self.fc_rgb(v_rgb))  # [B, hidden]
-        v_mot = self.act(self.fc_mot(v_mot))  # [B, hidden]
+    #     # 4. 逐尺度融合（类似Feature_Extractor）
+    #     [feat1, feat2, feat3] = [aligned_features[f] for f in self.in_features]
         
-        # 拼接并计算权重
-        z = torch.cat([v_rgb, v_mot], dim=1)  # [B, 2*hidden]
-        scores = self.fc_out(z)  # [B, 2]
-        alpha = torch.softmax(scores, dim=1)  # [B, 2]
+    #     P5 = self.lateral_conv0(feat3)
+    #     P5_upsample = self.upsample(P5)
+    #     P5_upsample = torch.cat([P5_upsample, feat2], 1)
+    #     P5_upsample = self.C3_p4(P5_upsample)
+    #     P4 = self.reduce_conv1(P5_upsample)
+    #     P4_upsample = self.upsample(P4)
+    #     P4_upsample = torch.cat([P4_upsample, feat1], 1)
+    #     P3_out = self.C3_p3(P4_upsample)  # (B, 64, H/8, W/8)
         
-        # 扩展维度用于广播
-        w_rgb = alpha[:, 0].view(B, 1, 1, 1)
-        w_mot = alpha[:, 1].view(B, 1, 1, 1)
+    #     # 扩展到256维以匹配MotionModel输入
+    #     P3_out = self.output_conv(P3_out)  # (B, 256, H/8, W/8)
         
-        return w_rgb, w_mot
+    #     return P3_out
 
 
-class Feature_Alignment(nn.Module):
-    def __init__(self, depth=0.33, width=0.50, in_features=("dark3", "dark4", "dark5"), 
-                 in_channels=[128, 256, 512], depthwise=False, act="silu"):
+class Feature_Extractor(nn.Module):
+    def __init__(self, depth = 1.0, width = 1.0, in_features = ("dark3", "dark4", "dark5"), in_channels = [256, 512, 1024], depthwise = False, act = "silu"):
         super().__init__()
-        from .light_backbone import LightBackbone
-        
-        Conv = DWConv if depthwise else BaseConv
-        self.in_features = in_features
-        
-        # RGB特征提取：CSPDarknet
-        self.rgb_backbone = CSPDarknet(depth, width, depthwise=depthwise, act=act)
-        
-        # 运动特征提取：LightBackbone
-        self.motion_backbone = LightBackbone(
-            out_features=in_features,
-            depth=depth,
-            width=width,
-            depthwise=True,  # 运动特征使用深度可分离卷积
-            act=act
-        )
-        
-        # 获取RGB和运动特征的通道数
-        base_channels = int(width * 64)
-        rgb_channels = [
-            base_channels * 4,   # dark3: 128
-            base_channels * 8,   # dark4: 256
-            base_channels * 16,  # dark5: 512
-        ]
-        mot_channels = [32, 64, 128]
-        
-        # 为每个尺度创建PairGate
-        self.pair_gates = nn.ModuleDict({
-            "dark3": PairGate(rgb_channels[0], mot_channels[0], hidden=64),
-            "dark4": PairGate(rgb_channels[1], mot_channels[1], hidden=64),
-            "dark5": PairGate(rgb_channels[2], mot_channels[2], hidden=64),
-        })
-        
-        # 通道对齐：将融合后的特征对齐到RGB通道数
-        self.align_convs = nn.ModuleDict({
-            "dark3": BaseConv(rgb_channels[0] + mot_channels[0], int(in_channels[0] * width), 1, 1, act=act),
-            "dark4": BaseConv(rgb_channels[1] + mot_channels[1], int(in_channels[1] * width), 1, 1, act=act),
-            "dark5": BaseConv(rgb_channels[2] + mot_channels[2], int(in_channels[2] * width), 1, 1, act=act),
-        })
-        
-        # 逐尺度融合（类似Feature_Extractor）
-        self.upsample = nn.Upsample(scale_factor=2, mode="nearest")
-        self.lateral_conv0 = BaseConv(int(in_channels[2] * width), int(in_channels[1] * width), 1, 1, act=act)
+        Conv                = DWConv if depthwise else BaseConv
+        self.backbone       = CSPDarknet(depth, width, depthwise = depthwise, act = act) # CSPDarknet主干，输出dark3/dark4/dark5分别表示：中分辨率/低分辨率/更低分辨率
+        self.in_features    = in_features
+        self.upsample       = nn.Upsample(scale_factor=2, mode="nearest") # 上采样最高层特征
+        self.lateral_conv0  = BaseConv(int(in_channels[2] * width), int(in_channels[1] * width), 1, 1, act=act) # 1*1卷积，通道1024压缩到512
         self.C3_p4 = CSPLayer(
             int(2 * in_channels[1] * width),
             int(in_channels[1] * width),
             round(3 * depth),
             False,
-            depthwise=depthwise,
-            act=act,
-        )
-        self.reduce_conv1 = BaseConv(int(in_channels[1] * width), int(in_channels[0] * width), 1, 1, act=act)
+            depthwise = depthwise,
+            act = act,
+        ) # 把上采样后的高层特征（dark5）与dark4做CSP融合
+        self.reduce_conv1   = BaseConv(int(in_channels[1] * width), int(in_channels[0] * width), 1, 1, act=act)
         self.C3_p3 = CSPLayer(
             int(2 * in_channels[0] * width),
             int(in_channels[0] * width),
             round(3 * depth),
             False,
-            depthwise=depthwise,
-            act=act,
-        )
+            depthwise = depthwise,
+            act = act,
+        ) # 把上采样后的dark45融合特征与dark3进一步融合
 
-        # 输出层：将P3_out从64维扩展到256维，以匹配MotionModel的输入要求
-        # 原来Feature_Extractor输出128维，现在需要256维输入MotionModel
-        self.output_conv = BaseConv(int(in_channels[0] * width), 256, 3, 1, act=act)
-
-    def forward(self, rgb_input, motion_input):
-        rgb_features = self.rgb_backbone.forward(rgb_input)
-        motion_features = self.motion_backbone.forward(motion_input)
-        
-        aligned_features = {}
-        for feat_name in self.in_features:
-            F_rgb = rgb_features[feat_name]
-            F_mot = motion_features[feat_name]
-            
-            # 使用PairGate计算权重
-            w_rgb, w_mot = self.pair_gates[feat_name](F_rgb, F_mot)
-            F_rgb_weighted = w_rgb * F_rgb
-            F_mot_weighted = w_mot * F_mot
-            
-            # 权重拼接：拼接加权后的RGB和运动特征
-            F_concat = torch.cat([F_rgb_weighted, F_mot_weighted], dim=1)
-            
-            # 通道对齐
-            F_aligned = self.align_convs[feat_name](F_concat)
-            aligned_features[feat_name] = F_aligned
-        
-        # 4. 逐尺度融合（类似Feature_Extractor）
-        [feat1, feat2, feat3] = [aligned_features[f] for f in self.in_features]
-        
-        P5 = self.lateral_conv0(feat3)
+    def forward(self, input):
+        out_features            = self.backbone.forward(input)
+        [feat1, feat2, feat3]   = [out_features[f] for f in self.in_features]
+        P5          = self.lateral_conv0(feat3)
         P5_upsample = self.upsample(P5)
         P5_upsample = torch.cat([P5_upsample, feat2], 1)
         P5_upsample = self.C3_p4(P5_upsample)
-        P4 = self.reduce_conv1(P5_upsample)
-        P4_upsample = self.upsample(P4)
-        P4_upsample = torch.cat([P4_upsample, feat1], 1)
-        P3_out = self.C3_p3(P4_upsample)  # (B, 64, H/8, W/8)
-        
-        # 扩展到256维以匹配MotionModel输入
-        P3_out = self.output_conv(P3_out)  # (B, 256, H/8, W/8)
+        P4          = self.reduce_conv1(P5_upsample) 
+        P4_upsample = self.upsample(P4) 
+        P4_upsample = torch.cat([P4_upsample, feat1], 1) 
+        P3_out      = self.C3_p3(P4_upsample)  
         
         return P3_out
-
-
-# class Feature_Extractor(nn.Module):
-#     def __init__(self, depth = 1.0, width = 1.0, in_features = ("dark3", "dark4", "dark5"), in_channels = [256, 512, 1024], depthwise = False, act = "silu"):
-#         super().__init__()
-#         Conv                = DWConv if depthwise else BaseConv
-#         self.backbone       = CSPDarknet(depth, width, depthwise = depthwise, act = act) # CSPDarknet主干，输出dark3/dark4/dark5分别表示：中分辨率/低分辨率/更低分辨率
-#         self.in_features    = in_features
-#         self.upsample       = nn.Upsample(scale_factor=2, mode="nearest") # 上采样最高层特征
-#         self.lateral_conv0  = BaseConv(int(in_channels[2] * width), int(in_channels[1] * width), 1, 1, act=act) # 1*1卷积，通道1024压缩到512
-#         self.C3_p4 = CSPLayer(
-#             int(2 * in_channels[1] * width),
-#             int(in_channels[1] * width),
-#             round(3 * depth),
-#             False,
-#             depthwise = depthwise,
-#             act = act,
-#         ) # 把上采样后的高层特征（dark5）与dark4做CSP融合
-#         self.reduce_conv1   = BaseConv(int(in_channels[1] * width), int(in_channels[0] * width), 1, 1, act=act)
-#         self.C3_p3 = CSPLayer(
-#             int(2 * in_channels[0] * width),
-#             int(in_channels[0] * width),
-#             round(3 * depth),
-#             False,
-#             depthwise = depthwise,
-#             act = act,
-#         ) # 把上采样后的dark45融合特征与dark3进一步融合
-
-#     def forward(self, input):
-#         out_features            = self.backbone.forward(input)
-#         [feat1, feat2, feat3]   = [out_features[f] for f in self.in_features]
-#         P5          = self.lateral_conv0(feat3)
-#         P5_upsample = self.upsample(P5)
-#         P5_upsample = torch.cat([P5_upsample, feat2], 1)
-#         P5_upsample = self.C3_p4(P5_upsample)
-#         P4          = self.reduce_conv1(P5_upsample) 
-#         P4_upsample = self.upsample(P4) 
-#         P4_upsample = torch.cat([P4_upsample, feat1], 1) 
-#         P3_out      = self.C3_p3(P4_upsample)  
-        
-#         return P3_out
 
 
 class MoPKL(nn.Module):
@@ -351,21 +351,29 @@ class MoPKL(nn.Module):
         super(MoPKL, self).__init__()
         
         self.num_frame = num_frame
-        self.backbone = Feature_Alignment(0.33, 0.50)
-        # Fusion_Module的channels参数需要匹配backbone的输出通道数（现在是256）
-        self.fusion = Fusion_Module(channels=[256], num_frame=num_frame)
-        # YOLOXHead的in_channels需要匹配Fusion_Module的输出通道数（512 = channels[0] * 2）
-        self.head = YOLOXHead(num_classes=num_classes, width = 1.0, in_channels = [512], act = "silu")
+        # 使用Feature_Extractor替代Feature_Alignment
+        self.backbone = Feature_Extractor(0.33,0.50)
+        # Fusion_Module的channels参数需要匹配backbone的输出通道数（Feature_Extractor输出128维）
+        self.fusion = Fusion_Module(channels=[128], num_frame=num_frame)
+        # YOLOXHead的in_channels需要匹配Fusion_Module的输出通道数（256 = channels[0] * 2）
+        self.head = YOLOXHead(num_classes=num_classes, width = 1.0, in_channels = [256], act = "silu")
+        # conv_vl用于融合两帧特征：128*2 -> 256
         self.conv_vl = nn.Sequential(
             BaseConv(128*2,256,3,1),
             BaseConv(256,256,3,1),
             BaseConv(256,256,1,1))
-        # conv_m输出通道数需要匹配Fusion_Module的期望：channels[0] * 2 = 256 * 2 = 512
+        # conv_motion用于处理concat后的运动差分图和融合特征：512 -> 256
+        # 使用多层卷积进行特征提取和降维
+        self.conv_motion = nn.Sequential(
+            BaseConv(256*2, 256, 3, 1),  
+            BaseConv(256, 256, 3, 1),  
+            BaseConv(256, 256, 1, 1)) 
+        # conv_m输出通道数需要匹配Fusion_Module的期望：channels[0] * 2 = 128 * 2 = 256
         self.conv_m = nn.Sequential(
             BaseConv(1,64,3,2),
             BaseConv(64,128,3,2),
             BaseConv(128,256,3,2),
-            BaseConv(256,512,1,1))  # 输出512通道以匹配Fusion_Module的期望
+            BaseConv(256,256,1,1))  # 输出256通道以匹配Fusion_Module的期望
         self.vf = nn.Sequential(
             BaseConv(256,16,3,2),
             BaseConv(16,16,1,1))
@@ -417,20 +425,42 @@ class MoPKL(nn.Module):
             highpass_n=2
         )
         
-        # 将运动差分图转换为tensor并归一化到[0, 1]
-        # motion_diff_maps形状: (B, H, W)，uint8格式，值范围[0, 255]
-        motion_diff_tensor = torch.from_numpy(motion_diff_maps).float() / 255.0  # (B, H, W)
+        # 将运动差分图转换为tensor（已在motion_alignment_map.py中归一化到[0, 1]）
+        # motion_diff_maps形状: (B, H, W)，float32格式，值范围[0, 1]
+        motion_diff_tensor = torch.from_numpy(motion_diff_maps).float()  # (B, H, W)
         if inputs.is_cuda:
             motion_diff_tensor = motion_diff_tensor.cuda()
+        
+        # 使用Feature_Extractor分别提取特征
+        feat_last = self.backbone(frame2_batch)  # (B, 128, H/8, W/8)
+        feat_prev = self.backbone(frame1_batch)  # (B, 128, H/8, W/8)
+        
+        # 使用conv_vl对两帧进行特征融合
+        feat_concat = torch.cat([feat_last, feat_prev], dim=1)  # (B, 256, H/8, W/8)
+        feat_fused = self.conv_vl(feat_concat)  # (B, 256, H/8, W/8)
+        
+        # 将运动差分图下采样到对应尺度
+        B, C, H_feat, W_feat = feat_fused.shape
         motion_diff_tensor = motion_diff_tensor.unsqueeze(1)  # (B, 1, H, W) - 添加通道维度
+        # 下采样到融合特征尺度
+        target_size = (H_feat, W_feat)
+        if motion_diff_tensor.shape[-2:] != target_size:
+            motion_diff_downsampled = F.adaptive_max_pool2d(motion_diff_tensor, output_size=target_size)  # 保留小目标
+        else:
+            motion_diff_downsampled = motion_diff_tensor  # (B, 1, H_feat, W_feat)
         
-        # 使用Feature_Alignment进行特征对齐和融合
-        # 只处理最后一帧RGB图像和运动差分图
-        last_frame_rgb = inputs[:, :, self.num_frame-1, :, :]  # (B, 3, H, W) - 最后一帧
-        f_feats = self.backbone(last_frame_rgb, motion_diff_tensor)  # 特征对齐和融合
+        # 使用运动差分图（归一化后的权重图）与融合特征进行相乘，得到加权后的运动图
+        # 将运动差分图扩展到256维以匹配融合特征的通道数
+        motion_diff_expanded = motion_diff_downsampled.repeat(1, 256, 1, 1)  # (B, 256, H_feat, W_feat)
+        # 运动差分图作为权重，与融合特征相乘
+        weighted_motion = motion_diff_expanded * feat_fused  # (B, 256, H_feat, W_feat)
         
-        B, N, W, H = f_feats.shape
-        feats = f_feats  # 直接使用融合后的特征，不再需要conv_vl融合
+        # 将加权后的运动图与融合特征拼接
+        feats = torch.cat([feat_fused, weighted_motion], dim=1)  # (B, 512, H_feat, W_feat)
+        # 使用卷积层降维到256
+        feats = self.conv_motion(feats)  # (B, 256, H_feat, W_feat)
+        
+        B, N, W, H = feats.shape
 
         if self.training: 
             # Language-Driven Motion Alignment
@@ -452,12 +482,11 @@ class MoPKL(nn.Module):
             # h_j = h.unsqueeze(1)
             # pred_relation = torch.sum(h_i * h_j, dim=-1) # 通过内积计算两个节点间相似度
             # loss_relation = F.mse_loss(pred_relation, relation.squeeze(1))
-            loss_relation = torch.tensor(0.0).cuda()  # 忽略 loss_relation
         else:
             motion = self.motion.inference_forward(feats)
 
         motion = self.conv_m(motion.unsqueeze(1)) # 将视觉运动热力图转换成张量
-        feat = self.fusion(motion, feats) # 融合运动热力图与加强视觉特征
+        feat = self.fusion(motion, feat_last) # 融合运动热力图与加强视觉特征
         outputs  = self.head(feat) 
         
         if self.training:
